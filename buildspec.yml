@@ -1,0 +1,23 @@
+version: 0.2
+
+phases:
+  build:
+    commands:
+      - echo Start build
+      - mkdir -p output
+      - ls -la
+      - curl https://oalwyibmp0.microcms.io/api/v1/kitagas-test -H "X-MICROCMS-API-KEY:$API_KEY" -o data.json
+      - cat data.json
+      - python3 -c "import json; print(json.load(open('data.json'))['contents'][0].get('kg-title1',''))" > content.txt
+      - sed "s|<!-- CMS_CONTENT -->|$(cat content.txt)|g" index.html > output/index.html
+      - cat output/index.html
+
+  post_build:
+    commands:
+      - aws s3 sync output/ s3://kg-site-stg-202605/ --delete
+      - aws cloudfront create-invalidation --distribution-id E181N0Q7BM6KM8 --paths "/*"
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: output
