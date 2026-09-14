@@ -7,50 +7,50 @@ phases:
         set -eu
 
         : "${PREVIEW_BUCKET:?PREVIEW_BUCKET is required}"
-        : "${CODEBUILD_BUILD_NUMBER:?CODEBUILD_BUILD_NUMBER is required}"
         : "${CODEBUILD_WEBHOOK_HEAD_REF:?CODEBUILD_WEBHOOK_HEAD_REF is required}"
 
         echo "Branch: ${CODEBUILD_WEBHOOK_HEAD_REF}"
 
+        output_dir="$(mktemp -d)"
+
         if [ "${CODEBUILD_WEBHOOK_HEAD_REF}" = "refs/heads/main" ]; then
 
-          echo "Build microCMS preview artifact"
+          echo "Deploy main to latest/"
 
-          preview_output="$(mktemp -d)"
+          mkdir -p "$output_dir/preview"
 
-          mkdir -p "$preview_output/preview"
-
-          cp index.html "$preview_output/preview/template.html"
+          # microCMSプレビュー用テンプレート
+          cp index.html "$output_dir/preview/template.html"
 
           for asset_directory in assets images fonts; do
             if [ -d "$asset_directory" ]; then
-              mkdir -p "$preview_output/$asset_directory"
-              cp -R "$asset_directory/." "$preview_output/$asset_directory/"
+              mkdir -p "$output_dir/$asset_directory"
+              cp -R "$asset_directory/." "$output_dir/$asset_directory/"
             fi
           done
 
-          aws s3 sync "$preview_output/" \
-            "s3://${PREVIEW_BUCKET}/releases/${CODEBUILD_BUILD_NUMBER}/" \
-            --cache-control "public,max-age=31536000,immutable" \
+          aws s3 sync "$output_dir/" \
+            "s3://${PREVIEW_BUCKET}/latest/" \
+            --delete \
+            --cache-control "no-cache" \
             --only-show-errors
 
         elif [ "${CODEBUILD_WEBHOOK_HEAD_REF}" = "refs/heads/preview" ]; then
 
-          echo "Build header/footer preview artifact"
+          echo "Deploy preview branch to preview/"
 
-          preview_output="$(mktemp -d)"
-
-          cp index.html "$preview_output/index.html"
+          # CloudFrontから直接表示するためindex.htmlのまま配置
+          cp index.html "$output_dir/index.html"
 
           for asset_directory in assets images fonts; do
             if [ -d "$asset_directory" ]; then
-              mkdir -p "$preview_output/$asset_directory"
-              cp -R "$asset_directory/." "$preview_output/$asset_directory/"
+              mkdir -p "$output_dir/$asset_directory"
+              cp -R "$asset_directory/." "$output_dir/$asset_directory/"
             fi
           done
 
-          aws s3 sync "$preview_output/" \
-            "s3://${PREVIEW_BUCKET}/layout-preview/" \
+          aws s3 sync "$output_dir/" \
+            "s3://${PREVIEW_BUCKET}/preview/" \
             --delete \
             --cache-control "no-cache" \
             --only-show-errors
