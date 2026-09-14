@@ -1,24 +1,34 @@
 version: 0.2
 
 phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+    commands:
+      - npm ci
+
   build:
     commands:
-      - |
-        set -eu
-        : "${PREVIEW_BUCKET:?PREVIEW_BUCKET is required}"
-        : "${CODEBUILD_BUILD_NUMBER:?CODEBUILD_BUILD_NUMBER is required}"
-        preview_output="$(mktemp -d)"
-        mkdir -p "$preview_output/preview"
-        cp index.html "$preview_output/preview/template.html"
-        for asset_directory in assets images fonts; do
-          if [ -d "$asset_directory" ]; then
-            mkdir -p "$preview_output/$asset_directory"
-            cp -R "$asset_directory/." "$preview_output/$asset_directory/"
-          fi
-        done
-        aws s3 sync "$preview_output/" \
-          "s3://${PREVIEW_BUCKET}/releases/${CODEBUILD_BUILD_NUMBER}/" \
-          --cache-control "public,max-age=31536000,immutable" \
-          --only-show-errors
+      - npm run build
 
-# No CodePipeline artifacts: this project uploads directly to the preview-only bucket.
+  post_build:
+    commands:
+      - echo "Branch = ${CODEBUILD_WEBHOOK_HEAD_REF}"
+
+      - |
+        if [ "${CODEBUILD_WEBHOOK_HEAD_REF}" = "refs/heads/main" ]; then
+          echo "Deploy latest artifact"
+          aws s3 sync output/ s3://${PREVIEW_BUCKET}/latest/ --delete
+
+        elif [ "${CODEBUILD_WEBHOOK_HEAD_REF}" = "refs/heads/preview" ]; then
+          echo "Deploy layout preview artifact"
+          aws s3 sync output/ s3://${PREVIEW_BUCKET}/preview/ --delete
+
+        else
+          echo "Unsupported branch"
+          exit 1
+        fi
+
+      - aws cloudfront create-invalidation \
+          --distribution-id ${PREVIEW_DISTRIBUTION_ID} \
+          --paths "/*"
